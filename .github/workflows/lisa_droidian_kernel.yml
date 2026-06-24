@@ -58,13 +58,15 @@ jobs:
         echo '3.0 (native)' > debian/source/format
         echo 13 > debian/compat
 
-        cat > debian/rules <<EOF
+        cat > debian/rules <<'EOF'
 #!/usr/bin/make -f
+
 include /usr/share/linux-packaging-snippets/kernel-snippet.mk
 
 %:
-\tdh
+	dh $@
 EOF
+
 
         chmod +x debian/rules
 
