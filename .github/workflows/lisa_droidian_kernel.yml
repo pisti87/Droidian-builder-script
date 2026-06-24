@@ -6,79 +6,50 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-kernel:
+  build:
     runs-on: ubuntu-latest
 
-    env:
-      DEVICE: lisa
-      VENDOR: xiaomi
-      PACKAGES_DIR: ${{ github.workspace }}/packages
-      KERNEL_DIR: ${{ github.workspace }}/kernel
-
     steps:
-
-    # =========================
-    # 1. Checkout kernel source
-    # =========================
-    - name: Checkout kernel source
+    - name: Checkout
       uses: actions/checkout@v4
-      with:
-        path: kernel
 
-    # =========================
-    # 2. Prepare workspace
-    # =========================
-    - name: Setup directories
+    - name: Create build script
       run: |
-        mkdir -p $PACKAGES_DIR
+        mkdir -p ci
 
-    # =========================
-    # 3. Run Droidian build container
-    # =========================
-    - name: Build kernel in Droidian container
-      run: |
-        docker run --rm \
-          -v $GITHUB_WORKSPACE/kernel:/buildd/sources \
-          -v $PACKAGES_DIR:/buildd \
-          quay.io/droidian/build-essential:trixie-amd64 bash -c "
-
+        cat > ci/build.sh <<'EOF'
+        #!/bin/bash
         set -e
 
         cd /buildd/sources
 
-        echo '=== Installing packaging tools ==='
         apt-get update
-        apt-get install -y linux-packaging-snippets git build-essential bc bison flex clang
+        apt-get install -y linux-packaging-snippets clang build-essential bc bison flex git
 
-        echo '=== Preparing packaging skeleton ==='
         mkdir -p debian/source
 
         cp /usr/share/linux-packaging-snippets/kernel-info.mk.example debian/kernel-info.mk
 
-        echo '3.0 (native)' > debian/source/format
+        echo "3.0 (native)" > debian/source/format
         echo 13 > debian/compat
 
-        cat > debian/rules <<'EOF'
+        cat > debian/rules <<'MAKE'
 #!/usr/bin/make -f
 
 include /usr/share/linux-packaging-snippets/kernel-snippet.mk
 
 %:
 	dh $@
-EOF
-
+MAKE
 
         chmod +x debian/rules
 
-        echo '=== Configuring kernel-info.mk ==='
         cat >> debian/kernel-info.mk <<EOF
 
 KERNEL_ARCH := arm64
 DEB_BUILD_FOR := arm64
-
 KERNEL_DEFCONFIG := lisa_defconfig
 KERNEL_BASE_VERSION := 5.4.0
-
 BUILD_CC := clang
 
 KERNEL_CMDLINE := console=tty0 droidian.lvm.prefer
@@ -91,26 +62,26 @@ KERNEL_BOOTIMAGE_TAGS_OFFSET := 0x00000100
 KERNEL_BOOTIMAGE_VERSION := 2
 
 FLASH_ENABLED := 1
-FLASH_INFO_CPU := Qualcomm Technologies, Inc SM7350
-FLASH_INFO_MANUFACTURER := Xiaomi
 FLASH_INFO_MODEL := lisa
-
+FLASH_INFO_MANUFACTURER := Xiaomi
 EOF
 
-        echo '=== Generating control file ==='
-        dh debian/control || true
-
-        echo '=== Starting build ==='
         export RELENG_HOST_ARCH=arm64
         releng-build-package
+        EOF
 
-        "
+        chmod +x ci/build.sh
 
-    # =========================
-    # 4. Upload artifacts
-    # =========================
-    - name: Upload kernel packages
+    - name: Run Docker build
+      run: |
+        docker run --rm \
+          -v $GITHUB_WORKSPACE:/workspace \
+          quay.io/droidian/build-essential:trixie-amd64 \
+          bash /workspace/ci/build.sh
+
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: droidian-kernel-lisa
-        path: packages/*.deb
+        path: |
+          packages/*.deb
