@@ -63,7 +63,7 @@ jobs:
 include /usr/share/linux-packaging-snippets/kernel-snippet.mk
 
 %:
-\tdh \$@
+\tdh
 EOF
 
         chmod +x debian/rules
